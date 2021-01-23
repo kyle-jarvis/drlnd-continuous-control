@@ -1,5 +1,5 @@
 from unityagents import UnityEnvironment
-from drlnd.common.agent import PPOAgent, ReplayBuffer, ActionType
+from drlnd.common.agent import DDPGAgent, ReplayBuffer, ActionType
 import numpy as np
 import torch
 
@@ -24,9 +24,9 @@ def run():
     # At all points in time the agent acts according to the same policy, so we only
     # need one agent, and feed each state to the agent sequentially.
     buffer = ReplayBuffer(action_size, int(1e6), 64, 1234, action_dtype = ActionType.CONTINUOUS)
-    agent = PPOAgent(state_size, action_size, buffer)
+    agent = DDPGAgent(state_size, action_size, buffer)
 
-    n_episodes = 100
+    n_episodes = 2
     for i in range(n_episodes):
         print(f"Episode: {i}")
         env_info = env.reset(train_mode=True)[brain_name]
