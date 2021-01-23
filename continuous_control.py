@@ -18,9 +18,13 @@ control of an actuated robotic arm.
 from unityagents import UnityEnvironment
 from drlnd.common.agents import DDPGAgent
 from drlnd.common.agents.utils import ReplayBuffer, ActionType
+from drlnd.common.utils import get_next_results_directory
 import numpy as np
 import torch
 import click
+from collections import deque
+import numpy as np
+import os
 
 def get_unity_env(path: str):
     env = UnityEnvironment(file_name=path)
@@ -46,7 +50,9 @@ def cli():
 
 
 @cli.command()
-def train():
+@click.option("--n-episodes", type=int, default = 1)
+@click.option("--note", type=str, default=None)
+def train(n_episodes, note):
     env, brain_name, num_agents, action_size, state_size = get_unity_env('./unity_environments/one_agent/Reacher_Linux/Reacher.x86_64')
 
     # At all points in time the agent acts according to the same policy, so we only
@@ -54,7 +60,8 @@ def train():
     buffer = ReplayBuffer(action_size, int(1e6), 64, 1234, action_dtype = ActionType.CONTINUOUS)
     agent = DDPGAgent(state_size, action_size, buffer)
 
-    n_episodes = 1
+    episode_scores = deque(maxlen=100)
+    average_scores = []
     for i in range(n_episodes):
         print(f"Episode: {i}")
         env_info = env.reset(train_mode=True)[brain_name]
@@ -74,9 +81,16 @@ def train():
             state = next_state                               # roll over states to next time step
             if np.any(done):                                  # exit loop if episode finished
                 break
+        episode_scores.append(score)
+        average_scores.append(np.mean(episode_scores))
         print('Total score (averaged over agents) this episode: {}'.format(np.mean(score)))
 
-    agent.save_weights('.')
+    results_directory = get_next_results_directory()
+    agent.save_weights(results_directory)
+    np.savetxt(os.path.join(results_directory, 'scores.txt'), average_scores)
+    if note is not None:
+        with open(os.path.join(results_directory, 'note.txt'), 'w') as f:
+            f.write(note)
 
 
 @cli.command()
@@ -109,4 +123,6 @@ def run(weights_path, n_episodes):
 
 # Collect trajectories using agents
 if __name__ == "__main__":
+    project_home = (os.getcwd() if 'PROJECT_HOME' not in os.environ.keys() else os.environ['PROJECT_HOME'])
+    os.environ['PROJECT_HOME'] = project_home
     cli()
