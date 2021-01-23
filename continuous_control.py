@@ -1,5 +1,6 @@
 from unityagents import UnityEnvironment
-from drlnd.common.agent import DDPGAgent, ReplayBuffer, ActionType
+from drlnd.common.agents import DDPGAgent
+from drlnd.common.agents.utils import ReplayBuffer, ActionType
 import numpy as np
 import torch
 
