@@ -3,3 +3,4 @@ unity_environments/*
 results/*
 *.ipynb
 unity-environment.log
+plot_results.py

@@ -80,3 +80,5 @@ Options:
 ```
 
 ## Results
+
+<img src = "./resources/comparison.png" width="300"/>
