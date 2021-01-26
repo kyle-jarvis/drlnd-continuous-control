@@ -18,7 +18,8 @@ control of an actuated robotic arm.
 from unityagents import UnityEnvironment
 from drlnd.common.agents import DDPGAgent
 from drlnd.common.agents.utils import ReplayBuffer, ActionType
-from drlnd.common.utils import get_next_results_directory, path_from_project_home
+from drlnd.common.utils import get_next_results_directory, path_from_project_home, \
+    OrnsteinUhlenbeckProcess, LinearSequence
 import numpy as np
 import torch
 import click
@@ -62,46 +63,62 @@ def cli():
 def train(n_episodes, note):
     """Train an agent in the 'one_agent' environment using DDPG.
     """
-    env, brain_name, num_agents, action_size, state_size = get_unity_env('./unity_environments/one_agent/Reacher_Linux/Reacher.x86_64')
+    env, brain_name, num_agents, action_size, state_size = \
+        get_unity_env('./unity_environments/one_agent/Reacher_Linux/Reacher.x86_64')
 
-    buffer = ReplayBuffer(action_size, int(1e6), 64, 1234, action_dtype = ActionType.CONTINUOUS)
+    buffer = ReplayBuffer(
+        action_size, 
+        int(1e6), 
+        64, 
+        1234, 
+        action_dtype = ActionType.CONTINUOUS
+        )
+
     agent = DDPGAgent(state_size, action_size, buffer)
 
     episode_scores = deque(maxlen=100)
     average_scores = []
+
     noise_fn_taper = 250
     scale = 1.0
+
     for i in range(n_episodes):
         print(f"Episode: {i}")
         env_info = env.reset(train_mode=True)[brain_name]
-        state = env_info.vector_observations                   # get the current state (for each agent)
+        state = env_info.vector_observations
         #print(f"Initial state: {state}")
-        score = 0.0                                            # initialize the score (for each agent)
+        score = 0.0
         
         # Include some noise in the action selection, which we linearly scale
         scale = max([1e-4, scale*(1.0-(float(i)/noise_fn_taper))])
-        noise_fn = lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(1, action_size))).float()
+        #noise_fn = lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(1, action_size))).float()
+        dt = np.random.choice([1e-2, 5e-2, 1e-1])
+        theta = np.random.choice([0.1, 0.5, 1.0])
+        noise_generator = OrnsteinUhlenbeckProcess((1, action_size), scale, dt=dt, theta=theta)
+        noise_fn = lambda : torch.from_numpy(noise_generator.sample()).float()
         while True:
             action = (
                 agent.act(
-                    torch.from_numpy(state).float(), 
+                    torch.from_numpy(state).float(),
+                    policy_suppression = (1.0 - scale), 
                     noise_func = noise_fn)
                     .numpy()
                     )
-            env_info = env.step([action])[brain_name]           # send all actions to tne environment
-            next_state = env_info.vector_observations         # get next state (for each agent)
-            reward = env_info.rewards                         # get reward (for each agent)
-            done = env_info.local_done                        # see if episode finished
+            env_info = env.step([action])[brain_name]
+            next_state = env_info.vector_observations
+            reward = env_info.rewards
+            done = env_info.local_done
             agent.replay_buffer.add(*state, *action, *reward, *next_state, *done)
             agent.learn(0.99)
 
-            score += env_info.rewards[0]                         # update the score (for each agent)
-            state = next_state                               # roll over states to next time step
-            if np.any(done):                                  # exit loop if episode finished
+            score += env_info.rewards[0]
+            state = next_state
+            if np.any(done):
                 break
+
         episode_scores.append(score)
         average_scores.append(np.mean(episode_scores))
-        print('Total score (averaged over agents) this episode: {}'.format(np.mean(score)))
+        print('Total score this episode: {}'.format(np.mean(score)))
 
     results_directory = get_next_results_directory()
     agent.save_weights(results_directory)
@@ -131,28 +148,31 @@ def run(weights_path: str, n_episodes: int):
     """Initialise an agent using pre-trained network weights and observe the 
     agent's interaction with the environment.
     """
-    env, brain_name, num_agents, action_size, state_size = get_unity_env('./unity_environments/one_agent/Reacher_Linux/Reacher.x86_64')
+    env, brain_name, num_agents, action_size, state_size = \
+        get_unity_env('./unity_environments/one_agent/Reacher_Linux/Reacher.x86_64')
 
-    buffer = ReplayBuffer(action_size, int(1e6), 64, 1234, action_dtype = ActionType.CONTINUOUS)
-    agent = DDPGAgent(state_size, action_size, buffer)
+    agent = DDPGAgent(state_size, action_size)
     if weights_path is None:
         weights_path = path_from_project_home('./resources/solved_weights/')
     agent.load_weights(weights_path)
+
+    noisy_actor = OrnsteinUhlenbeckProcess((1, action_size), 1.0, theta=.45, dt=1e-1)
+    #noisy_actor = lambda : np.random.normal(loc=0.0, scale=scale, size=(1, action_size))
 
     for i in range(n_episodes):
         print(f"Episode: {i}")
         env_info = env.reset(train_mode=False)[brain_name]
         state = env_info.vector_observations
-        score = 0.0                                            # initialize the score (for each agent)
+        score = 0.0
         for i in range(300):
-            action = agent.act(torch.from_numpy(state).float()).numpy() # select an action (for each agent)
-            env_info = env.step([action])[brain_name]           # send all actions to tne environment
-            state = env_info.vector_observations         # get next state (for each agent)
-            reward = env_info.rewards                         # get reward (for each agent)
-            done = env_info.local_done                        # see if episode finished
+            action = noisy_actor.sample() #agent.act(torch.from_numpy(state).float()).numpy() # select an action (for each agent)
+            env_info = env.step([action])[brain_name]
+            state = env_info.vector_observations
+            reward = env_info.rewards
+            done = env_info.local_done
 
-            score += env_info.rewards[0]                         # update the score (for each agent)
-            if np.any(done):                                  # exit loop if episode finished
+            score += env_info.rewards[0]
+            if np.any(done):
                 break
         print('Total score (averaged over agents) this episode: {}'.format(np.mean(score)))
 
