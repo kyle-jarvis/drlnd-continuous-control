@@ -68,19 +68,23 @@ def train(n_episodes, note):
 
     buffer = ReplayBuffer(
         action_size, 
-        int(1e6), 
+        int(5e5), 
         64, 
         1234, 
         action_dtype = ActionType.CONTINUOUS
         )
 
-    agent = DDPGAgent(state_size, action_size, buffer)
+    agent = DDPGAgent(state_size, action_size, buffer, hidden_layer_size=256)
 
     episode_scores = deque(maxlen=100)
+    on_policy_scores = deque(maxlen=100)
     average_scores = []
+    on_policy_averages = []
+    online = lambda x: (x%2 == 0)
+    learning_episodes = 0
 
     noise_fn_taper = 250
-    scale = 1.0
+    scale_next = 1.0
 
     for i in range(n_episodes):
         print(f"Episode: {i}")
@@ -88,14 +92,21 @@ def train(n_episodes, note):
         state = env_info.vector_observations
         #print(f"Initial state: {state}")
         score = 0.0
-        
-        # Include some noise in the action selection, which we linearly scale
-        scale = max([1e-4, scale*(1.0-(float(i)/noise_fn_taper))])
-        #noise_fn = lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(1, action_size))).float()
-        dt = np.random.choice([1e-2, 5e-2, 1e-1])
-        theta = np.random.choice([0.1, 0.5, 1.0])
-        noise_generator = OrnsteinUhlenbeckProcess((1, action_size), scale, dt=dt, theta=theta)
-        noise_fn = lambda : torch.from_numpy(noise_generator.sample()).float()
+
+        if not online(i):  
+            # Include some noise in the action selection, which we linearly scale
+            scale = max([1e-4, scale_next*(1.0-(float(learning_episodes)/noise_fn_taper))])
+            scale_next = scale
+            noise_fn = lambda : torch.from_numpy(np.random.normal(loc=0.0, scale=scale, size=(1, action_size))).float()
+            #dt = np.random.choice([1e-2, 5e-2, 1e-1])
+            #theta = np.random.choice([0.1, 0.5, 1.0])
+            #noise_generator = OrnsteinUhlenbeckProcess((1, action_size), scale, dt=dt, theta=theta)
+            #noise_fn = lambda : torch.from_numpy(noise_generator.sample()).float()
+            learning_episodes += 1
+        else:
+            scale = 0.0
+            noise_fn = lambda : 0.0
+
         while True:
             action = (
                 agent.act(
@@ -108,21 +119,29 @@ def train(n_episodes, note):
             next_state = env_info.vector_observations
             reward = env_info.rewards
             done = env_info.local_done
-            agent.replay_buffer.add(*state, *action, *reward, *next_state, *done)
-            agent.learn(0.99)
+
+            if not online(i):
+                agent.replay_buffer.add(*state, *action, *reward, *next_state, *done)
+                agent.learn(0.99)
 
             score += env_info.rewards[0]
             state = next_state
             if np.any(done):
                 break
 
-        episode_scores.append(score)
-        average_scores.append(np.mean(episode_scores))
+        if not online(i):
+            episode_scores.append(score)
+            average_scores.append(np.mean(episode_scores))
+        else:
+            on_policy_scores.append(score)
+            on_policy_averages.append(np.mean(on_policy_scores))
+
         print('Total score this episode: {}'.format(np.mean(score)))
 
     results_directory = get_next_results_directory()
     agent.save_weights(results_directory)
     np.savetxt(os.path.join(results_directory, 'scores.txt'), average_scores)
+    np.savetxt(os.path.join(results_directory, 'on_policy_scores.txt'), on_policy_averages)
     if note is not None:
         with open(os.path.join(results_directory, 'note.txt'), 'w') as f:
             f.write(note)
@@ -156,18 +175,19 @@ def run(weights_path: str, n_episodes: int):
         weights_path = path_from_project_home('./resources/solved_weights/')
     agent.load_weights(weights_path)
 
-    noisy_actor = OrnsteinUhlenbeckProcess((1, action_size), 1.0, theta=.45, dt=1e-1)
+    #noisy_actor = OrnsteinUhlenbeckProcess((1, action_size), 1.0, theta=.45, dt=1e-1)
     #noisy_actor = lambda : np.random.normal(loc=0.0, scale=scale, size=(1, action_size))
 
     for i in range(n_episodes):
         print(f"Episode: {i}")
         env_info = env.reset(train_mode=False)[brain_name]
-        state = env_info.vector_observations
+        states = env_info.vector_observations
+
         score = 0.0
-        for i in range(300):
-            action = noisy_actor.sample() #agent.act(torch.from_numpy(state).float()).numpy() # select an action (for each agent)
-            env_info = env.step([action])[brain_name]
-            state = env_info.vector_observations
+        for i in range(100):
+            actions = [agent.act(torch.from_numpy(state).float(), policy_suppression=1.0).numpy() for state in states]
+            env_info = env.step(actions)[brain_name]
+            states = env_info.vector_observations
             reward = env_info.rewards
             done = env_info.local_done
 
