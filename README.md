@@ -1,5 +1,7 @@
 # Udacity DRLND
 
+## [Report](./Report.md)
+
 ## P2 Continuous Control
 Read about the project / environment [here](./UdacityP2ContinuousControl.md).
 
@@ -13,7 +15,7 @@ to the agent is a 33-dimensional vector.
 
 The agent receives a positive reward at each time step where the gripper is in 
 the target area. The environment is considered to be solved when the agent 
-receives a cumulative average reward of > +30 over 100 consecutive episodes.
+receives a cumulative average reward of > +30 over 100 consecutive episodes. Further details of the environment and its representation, as perceived by an agent, are given in the [report](./Report.md).
 
 ## Getting Started
 1. Python Environment
@@ -81,4 +83,10 @@ Options:
 
 ## Results
 
+Some examples of the observed training schedules, under different exploration policies (governed by the form of the noise distribution exploratory actions are drawn from) are shown below.
+
 <img src = "./resources/comparison.png" width="300"/>
+
+Below is a GIF of the trained agent controlling a number of limbs simultaneously. Targets are visible as green spheres.
+
+<img src = "./resources/reacher.gif" width="450" height=270/>
