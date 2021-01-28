@@ -63,6 +63,10 @@ Options:
   --help                Show this message and exit.
 ```
 
+E.g.
+
+`python continuous_control.py train --n-episodes 500`
+
 ### Running a trained agent
 
 ```
@@ -80,6 +84,10 @@ Options:
   --n-episodes INTEGER  Number of episodes to train an agent for.
   --help                Show this message and exit.
 ```
+
+E.g. Run a trained agent (included weights in resources) for 5 agents.
+
+`python continuous_control.py run --n-episodes 5`
 
 ## Results
 
